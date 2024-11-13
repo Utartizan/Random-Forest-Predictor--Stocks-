@@ -1,0 +1,12 @@
+name: StockPricePredictionApp
+title: StockPricePredictionApp
+username: utartizan
+account: utartizan
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 12888565
+bundleId: 9169512
+url: https://utartizan.shinyapps.io/StockPricePredictionApp/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE

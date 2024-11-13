@@ -1,0 +1,264 @@
+---
+title: "Stock Price Predictor"
+author: "Ubayd Knight"
+date: "`r Sys.Date()`"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    theme: united
+runtime: shiny
+---
+
+## Column {#sec-column}
+
+### **Guide**
+
+**Welcome to the Stock Price Prediction App!**
+
+Here, you can select a stock within the S&P 500 (for convenience sake, only the top 100 companies from the S&P500 are included) and predict its future prices based on its historical data.
+
+**How to Use the App:**
+
+1.  **Select Stock Symbol**: Choose a stock symbol from the dropdown menu provided, includes the top 100 stocks in the S&P 500 such as AAPL (Apple), AMZN (Amazon), BLK (Blackrock), etc.
+
+2.  **Date Range**: Select the date range for which you want to analyse the stock prices. The default range is from January 1, 2022, to the current date.
+
+3.  **Set Training Data Percentage**: Adjust the Training Data Percentage slider to determine how much of the selected data will be used for training the prediction model. You can set this between 40% and 90%. For a range of **1 year**, I suggest you use **45-70% training data** (depending on how volatile the stock is). For a range of **2 years or more**, I suggest you use **85% or more**.
+
+4.  **Predict**: Click the "Predict" button to obtain the historical closing prices of the selected stock (red), predicted prices based on historical data (cyan) and future price predictions for the next 30 days (blue).
+
+**Methodology:**
+
+The app uses a Random Forest model to predict stock prices. The model leverages historical stock data to provide time-series predictions for the selected stock.
+
+**Model Details:**
+
+-   **Training Data**: The model is trained on historical stock prices up to 30 days before the end date selected.
+-   **Testing Data**: The last 30 days of the selected date range are used for testing the model's accuracy.
+-   **Forecasting**: The model forecasts stock prices for the next 30 days.
+
+**Interpretation of Results:**
+
+-   **Plot**: The plot displays the historical stock prices and the predicted prices. The blue line represents the actual stock prices, while the red line represents the predicted prices.
+
+**Metrics**:
+
+The **Mean Absolute Error (MAE)**: Displays the differences of errors given between the predicted and actual stock prices.
+
+**Root Mean Squared Error (RMSE)**: Measures the square root of the average of squared differences between both predicted and actual stock prices.
+
+**R-Squared**: A statistical measure that provides the goodness of fit of the data displayed. Basically it displays the accuracy of the trained values, as well as the predicted values.
+
+**Acknowledgments:**
+
+This app was developed using the `shiny`, `quantmod`, `forecast`, `caret`, and `ggplot2` packages in R. Special thanks to the various amounts of documentation that enabled me to learn from and utilise for this project.
+
+**Documentations**:
+
+-   **R Script Markdown Cookbook** (Yihui Xie, Christophe Dervieux, Emily Riederer):\
+    <https://bookdown.org/yihui/rmarkdown-cookbook/html-css.html>
+
+-   Introduction to Machine Learning with R (Laurent Gatto):\
+    <https://lgatto.github.io/IntroMachineLearningWithR/supervised-learning.html#random-forest>
+
+-   quantmod package for R scripting:\
+    <https://cran.r-project.org/web/packages/quantmod/quantmod.pdf>
+
+-   shinyWidgets for User Interface/Display:\
+    <https://cran.r-project.org/web/packages/quantmod/quantmod.pdf>
+
+and most importantly, all the lecture material from my professor [Artur Semeyutin](https://uk.linkedin.com/in/asemeyutin).
+
+**Data Source:**
+
+The stock price data is sourced from Yahoo Finance using the `quantmod` package.
+
+------------------------------------------------------------------------
+
+------------------------------------------------------------------------
+
+## Column {data-width="930"}
+
+### **Application**
+
+```{css}
+
+body, .panel, .well, .form-control, .btn {
+  background: linear-gradient(to top, #000020, #5b1166); /* Gradient background */
+  color: #111111 !important; /* Changed to white for better contrast */
+  border-color: #000000 !important;
+  border-radius: 8px; /* Rounded corners */
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* Subtle shadow */
+}
+
+body, .navbar {
+
+  background-color: #5b1166;
+  text-align: left;
+  font-size: 1.25em;
+
+}
+
+
+```
+
+```{r}
+
+library(shiny)
+library(shinythemes)
+library(shinyWidgets)
+library(flexdashboard)
+library(shinyFeedback)
+library(quantmod)
+library(forecast)
+library(caret)
+library(ggplot2)
+library(xts)
+library(randomForest)
+library(forecast)
+
+# listing of the top 100 stocks in the S&P500 lol
+sp500_stocks <- c("AAPL", "ABBV", "ABT", "ACN", "ADBE", "ADI", "ADP", "AIG", "AMAT", "AMD", "AMGN", "AMZN", "AVGO", "AXP", "BA", "BAC", "BIIB", "BKNG", "BLK", "BMY", "BRK.B", "C", "CAT", "CHTR", "CL", "CMCSA", "COF", "COP", "COST", "CRM", "CSCO", "CVS", "CVX", "DHR", "DIS", "DOW", "DUK", "EBAY", "EMR", "EXC", "F", "FB", "FDX", "GD", "GE", "GILD", "GM", "GOOG", "GOOGL", "GS", "HD", "HON", "IBM", "INTC", "INTU", "JNJ", "JPM", "KHC", "KO", "LLY", "LMT", "LOW", "MA", "MCD", "MDT", "MET", "META", "MMM", "MO", "MRK", "MS", "MSFT", "NEE", "NFLX", "NKE", "NVDA", "ORCL", "PEP", "PFE", "PG", "PM", "PYPL", "QCOM", "RTX", "SBUX", "SO", "SPG", "T", "TGT", "TMO", "TMUS", "TSLA", "TXN", "UNH", "UNP", "UPS", "USB", "V", "VZ", "WBA", "WFC", "WMT", "XOM")
+
+
+ui <- fluidPage(
+    
+  theme = shinytheme("yeti"),
+  
+  chooseSliderSkin("Flat", color = '#5b1166'),
+  
+  titlePanel("Stock Price Prediction"),
+  
+  sidebarLayout(
+    
+    sidebarPanel(
+      
+      selectInput("stock", "Select Stock Symbol:", choices = sp500_stocks),
+      
+      dateRangeInput("dates", "Date Range:", start = "2024-01-01", end = Sys.Date()),
+      
+      sliderInput("train_pct", "Training Data Percentage:", min = 40, max = 90, value = 60, step = 5),
+      
+      actionButton("predict", "Predict")),
+    
+    mainPanel(
+      
+      plotOutput("plot"),
+      
+      textOutput("metrics")
+      
+    )
+    
+  )
+  
+)
+
+```
+
+```{r}
+
+server <- function(input, output, session) {
+  
+  observeEvent(input$predict, {
+    
+    stockSymbol <- input$stock
+    
+    date_range <- input$dates
+    
+    train_pct <- input$train_pct / 100
+    
+    # fetch the stock data for all the stocks involved from the selection in the user interface from the Yahoo Finance website/database
+    stockData <- getSymbols(stockSymbol, src = "yahoo", from = date_range[1], to = Sys.Date(), auto.assign = FALSE)
+    
+    # removes dates where missing values are present to keep the raw data valid, as well as remove any form of bias
+    stockData <- na.omit(stockData)
+    
+    # extracts the closing prices from the yahoo finance websites and then pushes all that information into the new variable stockPrices. For further elaboration, "Cl" here pretty much means closing prices.
+    stockPrices <- Cl(stockData)
+    
+    # calculates the 10-day moving average and add it as a new column
+    stockData$MA <- rollmean(stockPrices, k = 10, fill = NA)
+    
+    # same as line 146
+    stockData <- na.omit(stockData)
+    
+    # sets the train data limit to the current day, which is set in line 122, and sets the percentage of the training data to whatever the value is set by the user from the interface. 
+    train_end <- as.Date(date_range[2]) - round((1 - train_pct) * nrow(stockData))
+    trainData <- window(stockData, end = train_end)
+    modelData <- window(stockData, start = train_end + 1)
+    
+    # converts the training data (excluding the first column, which usually tells you what it is, e.g. stock price, date, etc.) to a data frame to utilise and display further on.
+    trainX <- as.data.frame(trainData[, -1])
+    trainY <- as.numeric(trainData[, 1])
+    
+    # convert the modeling data (excluding the first column) to a data frame for features
+    modelX <- as.data.frame(modelData[, -1])
+    modelY <- as.numeric(modelData[, 1])
+    
+    # Train a Random Forest model
+    rfModel <- randomForest(trainX, trainY, ntree = 500)  # increase number trees for better accuracy
+    predictions <- predict(rfModel, modelX)
+    
+    # predictions for the stock price will be over the next 30 days from whatever the end date is set by the user
+    futureDays <- 30
+    
+    # gets the latest date from the stock price of the stock chosen by the user and then generates a sequence of the next 30 days
+    future_dates <- seq(from = max(index(stockPrices)), by = "day", length.out = futureDays)
+    
+    # it obtains the number of rows from modelX and extracts the last row without dropping off anything to ensure it stays the same
+    last_row <- modelX[nrow(modelX), , drop = FALSE]
+    
+    # all of this data is then pushed into the new variable, 'futurePredictions'
+    futurePredictions <- numeric(futureDays)
+    
+    # predict future values iteratively, for the line below, it basically says "for every day in the 30 days set within the variable futureDays..."
+    for (i in 1:futureDays) {
+      
+      # predict that particular day using the Random Forest model
+      futurePredictions[i] <- predict(rfModel, last_row)
+      # Replace old data with new prediction
+      last_row[1, 1] <- futurePredictions[i]  # Assuming the first column is the closing price
+    }
+    
+    # to keep the format of the future predictions the same as the predicted values and the historical values, both future dates and future predictions (which is set to the price) are inserted together as a data frame, which is then all pushed into the new variable "futureData".
+    futureData <- data.frame(Date = future_dates, Price = futurePredictions)
+    
+    # generates a plot using ggplot2
+    output$plot <- renderPlot({
+      ggplot() +
+        geom_line(data = data.frame(Date = index(stockPrices), Price = as.numeric(stockPrices)),
+                  aes(x = Date, y = Price, color = "Historical Prices"), size = 1) +
+        geom_line(data = data.frame(Date = index(modelData), Price = predictions),
+                  aes(x = Date, y = Price, color = "Random Forest Best of Fit"), size = 1) +
+        geom_line(data = futureData, aes(x = Date, y = Price, color = "Future Predictions"), size = 1) +
+        labs(title = paste("Stock Prices and Predictions for", stockSymbol),
+             x = "Date", y = "Price", color = "Legend") +
+        scale_color_manual(values = c("Historical Prices" = "#820263", "Random Forest Best of Fit" = "#FFA632", "Future Predictions" = "#44884E")) +
+        theme_linedraw()
+    })
+    
+    # displays particular metrics that would output the viability/reliability of the predictions or results shown in the plot.
+    output$metrics <- renderText({
+      mae <- mean(abs(predictions - modelY))
+      rmse <- sqrt(mean((predictions - modelY)^2))
+      rsq <- 1 - sum((predictions - modelY)^2) / sum((modelY - mean(modelY))^2)
+      paste("MAE: ", round(mae, 2), 
+            " RMSE: ", round(rmse, 2), 
+            " R-squared: ", round(rsq, 2))
+    })
+    
+    # sends an alert when successful (it will always be successful lol so no need to add one for failure)
+    sendSweetAlert(
+      session = session,
+      title = "Success.",
+      text = "Stock Prices Calculated",
+      type = "success",
+      btn_colors = '#5b1166',
+      showCloseButton = TRUE
+    )
+  })
+}
+
+shinyApp(ui = ui, server = server)
+```
